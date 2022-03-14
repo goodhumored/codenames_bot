@@ -3,6 +3,7 @@ from requests import session
 from json import dumps, loads
 from random import randint
 from log import get_logger
+from config import *
 
 
 class Keyboard:
@@ -21,7 +22,8 @@ class Keyboard:
 		return self
 
 	def from_dict(self, kb: dict):
-		self.__kb = kb
+		if 'buttons' in kb:
+			self.__kb['buttons'] = kb['buttons']
 		self.__kb['one_time'] = self.one_time
 		self.__kb['inline'] = self.inline
 		return self
@@ -48,15 +50,21 @@ class Keyboard:
 		}
 		return self
 
-	def get_dict(self):
+	def get_dict(self) -> dict:
 		return self.__kb
 
-	def get_json(self):
-		return dumps(self.__kb)
+	def get_json(self) -> str:
+		return dumps(self.__kb, ensure_ascii=False)
+
+	def press_btn(self, row: int, n: int):
+		btn = self.__kb['buttons'][row][n]
+		btn['action']['label'] += ' ✅'
+		btn['action']['payload'] = '{"button": "pressed"}'
 
 
 class Message:
 	msg_id = 0
+	pid = 0
 
 	def __init__(self, text: str, keyboard: Keyboard = None, atts=None):
 		if atts is None:
@@ -83,10 +91,10 @@ class Message:
 
 class Api:
 	token = ''
-	v = 5.103
+	v = 5.131
 	session = None
 
-	def __init__(self, token: str, v: int):
+	def __init__(self, token: str, v: int = 5.131):
 		self.token = token
 		self.v = v
 		self.session = session()
@@ -94,21 +102,23 @@ class Api:
 	def method(self, method: str, **args) -> dict:
 		"""Send request to vk api method with given args and return answer or None if error"""
 		try:
-			resp = loads(self.session.get(
+			resp = self.session.get(
 				'https://api.vk.com/method/' + method,
 				params={
-					'V': self.v,
+					'v': self.v,
 					'access_token': self.token,
 					**args}
-			).text)
+			).text
+			if log_answers:
+				get_logger().log(resp)
+			resp = loads(resp)
 			if 'error' in resp:
 				raise Exception(dumps(resp['error']))
 		except Exception as e:
 			print('Ошибка:\n' + str(e))
 			get_logger().log(str(e))
 			return {}
-		else:
-			return resp
+		return resp['response']
 
 
 class Bot:
@@ -134,18 +144,23 @@ class Bot:
 
 	def send_message(self, peer_id: int, msg: Message):
 		"""send message object from this bot to pid"""
-		self.api.method(
-							'messages.send',
-							peer_id=peer_id,
-							message=msg.get_text(),
-							attachment=msg.get_atts(),
-							keyboard=msg.kb.get_dict()
-							)
+		msg.msg_id = self.api.method(
+			'messages.send',
+			peer_id=peer_id,
+			message=msg.get_text(),
+			attachment=msg.get_atts(),
+			keyboard=msg.kb.get_json(),
+			random_id=msg.rand
+		)
+		msg.pid = peer_id
 
 	def get_updates(self) -> list:
-		response = loads(self.api.session.get(
+		resp = self.api.session.get(
 			f'{self.server}?act=a_check&key={self.key}&ts={self.ts}&wait=25'
-		).text)
+		).text
+		response = loads(resp)
+		if log_answers:
+			get_logger().log(resp)
 		if 'failed' in response:
 			if response['failed'] == '1':
 				self.ts = response['ts']
@@ -155,18 +170,34 @@ class Bot:
 		self.ts = response['ts']
 		return response['updates']
 
-# def msg_from_id(self, msg_id: int, group_id: int = 0) -> Message:
-# 	ans = self.method('messages.getById',
-# 			message_ids = [self.msg_id],
-# 			group_id = group_id)
-# 	if ans:
-# 		msg = ans['items'][0];
-# 		return Message(msg['text'], Keyboard())
+	def send_answer(self, pid: int, eid: str, uid: int, text: str):
+		self.api.method(
+			'messages.sendMessageEventAnswer',
+			event_id=eid,
+			user_id=uid,
+			peer_id=pid,
+			event_data='{"type":"show_snackbar","text":"'+text+'"}'
+		)
 
-# def commit_edits(self, msg: Message):
-# 	self.api.method('messages.edit',
-# 			peer_id = peer_id,
-# 			message_id = self.msg_id,
-# 			message = msg.get_text(),
-# 			attachment = msg.get_atts()
-# 		)
+	def msg_from_id(self, msg_id: int, pid: int) -> Message:
+		ans = self.api.method(
+			'messages.getByConversationMessageId',
+			conversation_message_ids=[msg_id],
+			peer_id=pid
+		)
+		if ans:
+			msg = ans['items'][0];
+			res = Message(msg['text'], Keyboard().from_dict(msg['keyboard']))
+			res.pid = pid
+			res.msg_id = msg_id
+			return res
+
+	def commit_edits(self, msg: Message):
+		self.api.method(
+			'messages.edit',
+			peer_id=msg.pid,
+			conversation_message_id=msg.msg_id,
+			message=msg.get_text(),
+			attachment=msg.get_atts(),
+			keyboard=msg.kb.get_json()
+		)

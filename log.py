@@ -17,11 +17,13 @@ class Logger:
 
 	def __init__(self, path: str = 'logs\\log.txt'):
 		self.path = path
+		self.log('new session\n\n')
 
 	@check_file
 	def log(self, text):
-		with open(self.path, 'a') as f:
-			f.write(datetime.now().strftime('%d.%m [%H:%M:%S] ') + text)
+		print(text)
+		with open(self.path, 'a', encoding="utf-8") as f:
+			f.write(datetime.now().strftime('%d.%m [%H:%M:%S] ') + text + '\n')
 
 
 def get_logger() -> Logger:
