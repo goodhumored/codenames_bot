@@ -1,4 +1,4 @@
-config.py
+credentials.py
 games/
 .idea
 logs

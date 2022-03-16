@@ -2,6 +2,8 @@ from __future__ import annotations
 from requests import session
 from json import dumps, loads
 from random import randint
+
+from credentials import group_id
 from log import get_logger
 from config import *
 
@@ -55,6 +57,12 @@ class Keyboard:
 
 	def get_json(self) -> str:
 		return dumps(self.__kb, ensure_ascii=False)
+
+	def set_btn(self, row: int, n: int, btn: list):
+		b = self.__kb['buttons'][row][n]
+		b['action']['label'] = btn[0]
+		b['action']['payload'] = btn[1]
+		b['color'] = btn[2]
 
 	def press_btn(self, row: int, n: int):
 		btn = self.__kb['buttons'][row][n]
@@ -146,10 +154,10 @@ class Bot:
 		"""send message object from this bot to pid"""
 		msg.msg_id = self.api.method(
 			'messages.send',
-			peer_id=peer_id,
+			peer_ids=peer_id,
 			message=msg.get_text(),
 			attachment=msg.get_atts(),
-			keyboard=msg.kb.get_json(),
+			keyboard=msg.kb.get_json() if msg.kb else None,
 			random_id=msg.rand
 		)
 		msg.pid = peer_id
@@ -186,7 +194,7 @@ class Bot:
 			peer_id=pid
 		)
 		if ans:
-			msg = ans['items'][0];
+			msg = ans['items'][0]
 			res = Message(msg['text'], Keyboard().from_dict(msg['keyboard']))
 			res.pid = pid
 			res.msg_id = msg_id
@@ -201,3 +209,26 @@ class Bot:
 			attachment=msg.get_atts(),
 			keyboard=msg.kb.get_json()
 		)
+
+	def upload_photo(self, path):
+		upload_url = self.api.method(
+			'photos.getMessagesUploadServer',
+			group_id=self.gid
+		)['upload_url']
+
+		files = {'photo': open(path, 'rb')}
+
+		response_data = self.api.session.post(upload_url, files=files).json()
+		try:
+
+			photo_info = self.api.method(
+				'photos.saveMessagesPhoto',
+				server=response_data['server'],
+				photo=response_data['photo'],
+				hash=response_data['hash']
+			)[0]
+			return photo_info
+		except Exception as e:
+			print(e)
+			get_logger().log(str(e))
+			return None

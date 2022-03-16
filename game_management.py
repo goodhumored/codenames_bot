@@ -1,35 +1,124 @@
 from __future__ import annotations
 from os.path import exists
-from json import loads, load, dump, dumps
-from vk_facade import Keyboard
+from json import loads, load, dumps
+from typing import Callable
+
+from config import *
 from typing import Union
 from log import get_logger
 from random import shuffle
 
-dicts_dir = 'resources\\dictionaries\\'
-games_json = 'games\\games.json'
+
+class Cell:
+	text = ''
+	color = ''
+
+	def __init__(self, text: str, color: str):
+		self.text = text
+		self.color = color
+
+
+class Field:
+	path = ''
+
+	def __init__(self):
+		self.cells = []
+
+	def from_list(self, words: list) -> Field:
+		for row in words:
+			r = []
+			for word in row:
+				r.append(Cell(word[0], word[1]))
+			self.cells.append([*r])
+		return self
+
+	def from_json(self, json: str) -> Field:
+		return self.from_list(loads(json))
+
+	def get_dict(self) -> list:
+		return self.cells
+
+	def get_json(self) -> str:
+		return dumps(self.cells)
+
+	def get_color(self, row: int, n: int) -> str:
+		return self.cells[row][n].color
+
+	def set_color(self, row: int, n: int, color: str):
+		self.cells[row][n].color = color
+
+	def map(self, func: Callable):
+		for row in self.cells:
+			for cell in row:
+				func(cell)
+
+	def get_img(self, name) -> str:
+		import cv2
+		from PIL import ImageFont, ImageDraw, Image
+		img = cv2.imread(images_dir + 'default.jpg')
+
+		# Filling cells
+		y = field_padding
+		for row in self.cells:
+			x = field_padding
+			for word in row:
+				cv2.floodFill(img, None, (int(x+block_width/2), int(y+block_height/2)), colors[word.color], loDiff=20, upDiff=20)
+				x += block_width + block_margin * 2
+			y += block_height + block_margin * 2
+
+		im = Image.fromarray(img)
+		draw = ImageDraw.Draw(im)
+		font = ImageFont.truetype(fonts_dir + font_name, font_size)
+
+		# Putting text
+		y = field_padding
+		for row in self.cells:
+			x = field_padding
+			for word in row:
+				w, h = draw.textsize(word.text, font)
+				draw.text(
+					(int(x + (block_width-w)/2), int(y + (block_height - h)/2)),
+					word.text,
+					colors[word.color+'_text'],
+					font
+				)
+				x += block_width + block_margin * 2
+			y += block_height + block_margin * 2
+		im = im.crop((0, 0, x, y))
+
+		name = name + ".jpg"
+		im.save(images_dir + name, "JPEG")
+		return name
 
 
 class Game:
-	pid = 0
-	red_team = []
-	blue_team = []
-	cap_kb = Keyboard()
-	kb = Keyboard()
-	status = 'dict'
-	dict = ''
-
 	def __init__(self, pid: int = 0):
+		self.gid = get_manager().get_id()
 		self.pid = pid
+		self.red_cap = 0
+		self.blue_cap = 0
+		self.red_score = 0
+		self.blue_score = 0
+		self.cap_f = Field()
+		self.pl_f = Field()
+		self.status = 'dict'
+		self.turn = 'blue'
+		self.dict = ''
+		self.mid = 0
 
 	def load_from_dict(self, game: dict) -> Game:
+		self.gid = game['gid']
 		self.pid = game['pid']
-		self.red_team = game['red_team']
-		self.blue_team = game['blue_team']
-		self.cap_kb = Keyboard().from_dict(game['cap_kb'])
-		self.kb = Keyboard().from_dict(game['kb'])
+		self.red_cap = game['red_cap']
+		self.blue_cap = game['blue_cap']
+		self.cap_f = Field().from_list(game['cap_f'])
+		self.pl_f = Field().from_list(game['pl_f'])
+		self.red_score = game['red_score']
+		self.blue_score = game['blue_score']
 		self.status = game['status']
+		self.turn = game['turn']
 		self.dict = game['dict']
+		self.mid = game['mid']
 		return self
 
 	def load_from_json(self, json: str) -> Game:
@@ -37,13 +126,18 @@ class Game:
 
 	def to_dict(self) -> dict:
 		return {
+			'gid': self.gid,
 			'pid': self.pid,
-			'red_team': self.red_team,
-			'blue_team': self.blue_team,
-			'cap_kb': self.cap_kb.get_dict(),
-			'kb': self.kb.get_dict(),
+			'red_cap': self.red_cap,
+			'blue_cap': self.blue_cap,
+			'red_score': self.red_score,
+			'blue_score': self.blue_score,
+			'cap_f': self.cap_f.get_dict(),
+			'pl_f': self.pl_f.get_dict(),
 			'status': self.status,
-			'dict': self.dict
+			'turn': self.turn,
+			'dict': self.dict,
+			'mid': self.mid
 		}
 
 
@@ -74,6 +168,14 @@ class GameManager:
 				return None
 
 	@check_file
+	def find_by_gid(self, gid: int) -> Union[Game, None]:
+		with open(self.path, 'r', encoding="utf-8") as f:
+			games = loads(f.read())
+			for pid in games:
+				if int(games[pid]['gid']) == gid:
+					return Game().load_from_dict(games[pid])
+
+	@check_file
 	def save_game(self, game: Game) -> bool:
 		try:
 			f = open(self.path, 'r', encoding="utf-8")
@@ -81,7 +183,7 @@ class GameManager:
 			f.close()
 
 			f1 = open(self.path, 'w', encoding="utf-8")
-			games[game.pid] = game.to_dict()
+			games[str(game.pid)] = game.to_dict()
 			f1.write(dumps(games))
 			f1.close()
 			return True
@@ -89,6 +191,15 @@ class GameManager:
 			print(e)
 			get_logger().log(str(e))
 			return False
+
+	@check_file
+	def get_id(self):
+		with open(self.path, 'r', encoding="utf-8") as f:
+			games = loads(f.read())
+			if games != {}:
+				return int(max(games.values(), key=lambda x: int(x['gid']))) + 1
+			else:
+				return 1
 
 
 def get_manager(path: str = games_json) -> GameManager:
