@@ -228,6 +228,11 @@ class Bot:
 			keyboard=kb
 		)
 
+	def send_info(self, game):
+		info_msg = self.msg_from_id(game.mid, game.pid)
+		self.send_message(game.pid, info_msg)
+		game.mid = info_msg.msg_id
+
 	def upload_photo(self, path):
 		upload_url = self.api.method(
 			'photos.getMessagesUploadServer',

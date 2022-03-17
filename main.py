@@ -1,4 +1,4 @@
-from config import images_dir
+from config import images_dir, help_text
 from credentials import token, group_id
 from vk_facade import Api, Bot, Keyboard, Message
 from game_management import Game, get_manager, get_dicts_list, get_random_words, Field
@@ -50,15 +50,7 @@ while True:
 					if pid < 2000000000:
 						bot.send_message(pid, Message('Запросить информацию об игре можно только находясь в беседе'))
 						continue
-					bot.send_message(pid, Message(
-						f'Игра: {game.gid}\n'
-						f'Словарь: {game.dict}\n'
-						f'[id{game.red_cap}|Капитан красных], [id{game.blue_cap}|Капитан синих]\n'
-						f'Первый ход: команда ' + ('синих' if game.turn == 'blue' else 'красных')
-					))
-					info_msg = bot.msg_from_id(game.mid, pid)
-					bot.send_message(pid, info_msg)
-					game.mid = info_msg.msg_id
+					bot.send_info(game)
 				case 'hint':
 					if pid < 2000000000:
 						bot.send_message(pid, Message(
@@ -85,6 +77,7 @@ while True:
 						('🔴' if game.turn == 'red' else '🔵') + f'{grs[0]} {grs[1]}: '
 					)
 					game.hint_c = int(grs[1]) + 1
+					bot.send_info(game)
 					bot.commit_edits(info_msg)
 				case 'word':
 					if game.status != 'progress':
@@ -96,6 +89,9 @@ while True:
 								bot.send_message(pid, Message('Подсказка кончилась, ждём новую из центра!'))
 								continue
 							color = game.cap_f.get_color(r, c)
+							if game.pl_f.get_color(r, c) == color:
+								bot.send_message(pid, Message('Это слово уже нажимали'))
+								continue
 							game.hint_c -= 1
 							if color == 'black':
 								game.status = 'over'
@@ -140,6 +136,8 @@ while True:
 								s = '⚫'
 							elif color == 'white':
 								s = '⚪'
+							elif color == 'yellow':
+								s = '🟡'
 							game.pl_f.set_color(r, c, color)
 							game.cap_f.set_color(r, c, 'white')
 
@@ -304,6 +302,9 @@ while True:
 					'users.get',
 					user_ids=uid
 				)[0]
+				if uid in [game.red_cap, game.blue_cap]:
+					bot.send_answer(pid, eid, uid, 'Вы уже капитан')
+					continue
 				name = user['first_name'] + ' ' + user['last_name']
 				if action == 'red_cap':
 					game.red_cap = uid
@@ -349,6 +350,9 @@ while True:
 							'чтобы её открыть, отправьте боту любое сообщение',
 							kb
 						))
+						game.blue_cap = 0
+						game.red_cap = 0
+						gm.save_game(game)
 						continue
 
 					game.bmid = int(message.msg_id)

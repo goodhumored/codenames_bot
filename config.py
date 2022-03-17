@@ -13,12 +13,12 @@ colors = {
 }
 
 commands = {
-	r'\s*(начать|новая игра|(codenames )?start)\s*': 'start',
-	r'\s*(\w+)\s*(\d)\s*': 'hint',
-	r'\s*(\d+)\s*(\w+)\s*(\d)\s*': 'im_hint',
-	r'\s*(правила|help|hilfe)\s*': 'help',
-	r'\s*(info|game|игра|инф(о|а))\s*': 'info',
-	r'\s*(\w+\s?\w*)\s*': 'word',
+	r'(?:\[club\d+\|.*?\])?\s*,?\s*(начать|новая игра|(codenames )?start)\s*': 'start',
+	r'(?:\[club\d+\|.*?\])?\s*,?\s*(\w+)\s*(\d)\s*': 'hint',
+	r'(?:\[club\d+\|.*?\])?\s*,?\s*(\d+)\s*(\w+)\s*(\d)\s*': 'im_hint',
+	r'(?:\[club\d+\|.*?\])?\s*,?\s*(правила|help|hilfe)\s*': 'help',
+	r'(?:\[club\d+\|.*?\])?\s*,?\s*(info|game|игра|инф(о|а))\s*': 'info',
+	r'(?:\[club\d+\|.*?\])?\s*,?\s*(\w+\s?\w*)\s*': 'word',
 }
 
 
