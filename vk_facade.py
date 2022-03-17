@@ -61,13 +61,14 @@ class Keyboard:
 	def set_btn(self, row: int, n: int, btn: list):
 		b = self.__kb['buttons'][row][n]
 		b['action']['label'] = btn[0]
-		b['action']['payload'] = btn[1]
+		b['action']['payload'] = '{"button": "'+btn[1]+'"}'
 		b['color'] = btn[2]
 
 	def press_btn(self, row: int, n: int):
 		btn = self.__kb['buttons'][row][n]
 		btn['action']['label'] += ' ✅'
 		btn['action']['payload'] = '{"button": "pressed"}'
+		btn['color'] = 'primary'
 
 
 class Message:
@@ -76,7 +77,7 @@ class Message:
 
 	def __init__(self, text: str, keyboard: Keyboard = None, atts=None):
 		if atts is None:
-			atts = []
+			atts = ''
 		self.__text = text
 		self.__atts = atts
 		self.kb = keyboard
@@ -150,9 +151,9 @@ class Bot:
 		self.ts = ans['ts']
 		self.key = ans['key']
 
-	def send_message(self, peer_id: int, msg: Message):
+	def send_message(self, peer_id: int, msg: Message) -> bool:
 		"""send message object from this bot to pid"""
-		msg.msg_id = self.api.method(
+		resp = self.api.method(
 			'messages.send',
 			peer_ids=peer_id,
 			message=msg.get_text(),
@@ -160,7 +161,11 @@ class Bot:
 			keyboard=msg.kb.get_json() if msg.kb else None,
 			random_id=msg.rand
 		)
+		if 'error' in resp[0]:
+			return False
+		msg.msg_id = resp[0]['conversation_message_id']
 		msg.pid = peer_id
+		return True
 
 	def get_updates(self) -> list:
 		resp = self.api.session.get(
@@ -195,19 +200,32 @@ class Bot:
 		)
 		if ans:
 			msg = ans['items'][0]
-			res = Message(msg['text'], Keyboard().from_dict(msg['keyboard']))
+			if 'keyboard' in msg:
+				kb = Keyboard().from_dict(msg['keyboard'])
+			else:
+				kb = None
+			if 'attachments' in msg:
+				atts = []
+				for att in msg['attachments']:
+					atts.append(f"{att['type']}{att[att['type']]['owner_id']}_{att[att['type']]['id']}_{att[att['type']]['access_key']}")
+				atts = ','.join(atts)
+			else:
+				atts = ''
+			res = Message(msg['text'], kb)
 			res.pid = pid
 			res.msg_id = msg_id
+			res.set_atts(atts)
 			return res
 
 	def commit_edits(self, msg: Message):
+		kb = msg.kb.get_json() if msg.kb else None
 		self.api.method(
 			'messages.edit',
 			peer_id=msg.pid,
 			conversation_message_id=msg.msg_id,
 			message=msg.get_text(),
 			attachment=msg.get_atts(),
-			keyboard=msg.kb.get_json()
+			keyboard=kb
 		)
 
 	def upload_photo(self, path):
@@ -220,7 +238,6 @@ class Bot:
 
 		response_data = self.api.session.post(upload_url, files=files).json()
 		try:
-
 			photo_info = self.api.method(
 				'photos.saveMessagesPhoto',
 				server=response_data['server'],

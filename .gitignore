@@ -2,3 +2,5 @@ credentials.py
 games/
 .idea
 logs
+resources/images/*
+!resources/images/default.jpg

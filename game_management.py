@@ -17,6 +17,9 @@ class Cell:
 		self.text = text
 		self.color = color
 
+	def __str__(self):
+		return f'["{self.text}", "{self.color}"]'
+
 
 class Field:
 	path = ''
@@ -36,7 +39,13 @@ class Field:
 		return self.from_list(loads(json))
 
 	def get_dict(self) -> list:
-		return self.cells
+		res = []
+		for row in self.cells:
+			r = []
+			for cell in row:
+				r.append([cell.text, cell.color])
+			res.append([*r])
+		return res
 
 	def get_json(self) -> str:
 		return dumps(self.cells)
@@ -86,9 +95,20 @@ class Field:
 			y += block_height + block_margin * 2
 		im = im.crop((0, 0, x, y))
 
-		name = name + ".jpg"
-		im.save(images_dir + name, "JPEG")
+		name = images_dir + name + ".jpg"
+		im.save(name, "JPEG")
 		return name
+
+	def index_of(self, item):
+		r, n = 0, 0
+		for row in self.cells:
+			n = 0
+			for cell in row:
+				if cell.text == item:
+					return r, n
+				n += 1
+			r += 1
+		return -1, -1
 
 
 class Game:
@@ -99,12 +119,15 @@ class Game:
 		self.blue_cap = 0
 		self.red_score = 0
 		self.blue_score = 0
-		self.cap_f = Field()
-		self.pl_f = Field()
 		self.status = 'dict'
 		self.turn = 'blue'
 		self.dict = ''
 		self.mid = 0
+		self.rmid = 0
+		self.bmid = 0
+		self.hint_c = 0
+		self.cap_f = Field()
+		self.pl_f = Field()
 
 	def load_from_dict(self, game: dict) -> Game:
 		self.gid = game['gid']
@@ -119,6 +142,9 @@ class Game:
 		self.turn = game['turn']
 		self.dict = game['dict']
 		self.mid = game['mid']
+		self.rmid = game['rmid']
+		self.bmid = game['bmid']
+		self.hint_c = game['hint_c']
 		return self
 
 	def load_from_json(self, json: str) -> Game:
@@ -132,12 +158,15 @@ class Game:
 			'blue_cap': self.blue_cap,
 			'red_score': self.red_score,
 			'blue_score': self.blue_score,
-			'cap_f': self.cap_f.get_dict(),
-			'pl_f': self.pl_f.get_dict(),
 			'status': self.status,
 			'turn': self.turn,
 			'dict': self.dict,
-			'mid': self.mid
+			'mid': self.mid,
+			'rmid': self.rmid,
+			'bmid': self.bmid,
+			'hint_c': self.hint_c,
+			'cap_f': self.cap_f.get_dict(),
+			'pl_f': self.pl_f.get_dict(),
 		}
 
 
@@ -172,7 +201,7 @@ class GameManager:
 		with open(self.path, 'r', encoding="utf-8") as f:
 			games = loads(f.read())
 			for pid in games:
-				if int(games[pid]['gid']) == gid:
+				if int(games[pid]['gid']) == int(gid):
 					return Game().load_from_dict(games[pid])
 
 	@check_file
@@ -197,7 +226,7 @@ class GameManager:
 		with open(self.path, 'r', encoding="utf-8") as f:
 			games = loads(f.read())
 			if games != {}:
-				return int(max(games.values(), key=lambda x: int(x['gid']))) + 1
+				return int(max(games.values(), key=lambda x: int(x['gid']))['gid']) + 1
 			else:
 				return 1
 
